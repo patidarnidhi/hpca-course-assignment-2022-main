@@ -1,200 +1,126 @@
-// Create other necessary functions here
-__global__ void matrixMul(int *matA, int *matB, int *output, int N , int threads) {
-  // Compute each thread's global row and column index
-  for(int rowA=threadIdx.x ; rowA<N ; rowA+=threads){
-		for(int colB = 0; colB < N; colB += 2){
-			int s = 0;
+// Helper functions
 
-			for(int iter = 0; iter < N; iter++) 
-			{
-				s += matA[rowA * N + iter] * matB[iter * N + colB];	
-			}
-			output[rowA>>1 * (N>>1) +colB>>1]+=s;
+
+
+
+//Calculate no. of blocks
+int num_threads(int N , int threads){
+    return (N/2) / threads ;
+}
+
+
+
+
+__global__ void reduced_matrix_multiplication(int *matA, int *matB, int *output_matrix, int N, clock_t *time) {
+  // Compute each thread's global row and column index
+
+
+  //initialising value of row & column
+  int row_iter = blockIdx.x * blockDim.x + threadIdx.x;
+  int col_iter = blockIdx.y * blockDim.y + threadIdx.y;
+
+
+  output_matrix[row_iter * (N/2) + col_iter] = 0; //initialising entry of output matrix to 0
+
+  //performing matrix multiplication to get a single element of resultant matrix
+  for (int k = 0; k < N/2; k++) {
+      output_matrix[(row_iter * (N>>1)) + col_iter] += matA[(row_iter * (N<<1)) + k]  *  matB[(k * N) + (col_iter * 2)];
+      output_matrix[(row_iter * (N>>1)) + col_iter] += matA[(row_iter * 2 + 1) * N + k]  *  matB[(k * N) + (col_iter * 2)];
+      output_matrix[(row_iter * (N>>1)) + col_iter] += matA[(row_iter * (N<<1)) + k]  *  matB[(k * N) + (col_iter * 2 + 1)];
+      output_matrix[(row_iter * (N>>1)) + col_iter] += matA[(row_iter * 2 + 1) * N + k]  *  matB[(k * N) + (col_iter * 2 + 1)];
+  }
+    int k=N/2;
+  for (int k = N/2; k < N; k++) {
+      output_matrix[(row_iter * (N>>1)) + col_iter] += matA[(row_iter * (N<<1)) + k]  *  matB[(k * N) + (col_iter * 2)];
+      output_matrix[(row_iter * (N>>1)) + col_iter] += matA[(row_iter * 2 + 1) * N + k]  *  matB[(k * N) + (col_iter * 2)];
+      output_matrix[(row_iter * (N>>1)) + col_iter] += matA[(row_iter * (N<<1)) + k]  *  matB[(k * N) + (col_iter * 2 + 1)];
+      output_matrix[(row_iter * (N>>1)) + col_iter] += matA[(row_iter * 2 + 1) * N + k]  *  matB[(k * N) + (col_iter * 2 + 1)];
+  }
+
+}
+
+
+
+
+
+
+//Transpose of matrix B
+void transpose_matB(int *matB , int *temp , int N){
+    for(int i=0 ; i<N ; i++){
+        for(int j=0 ; j<N/2 ; j++){
+            temp[(i * N) + j] = matB[(j * N) + i];
         }
-			
-		for(int colB = 1; colB < N; colB += 2){
-			int s = 0;
-
-			for(int iter = 0; iter < N; iter++) 
-			{
-				s += matA[rowA * N + iter] * matB[iter * N + colB];
-			}
-		    output[rowA>>1 * (N>>1) +colB>>1]+=s;
-		}
-	}
-}
-
-// Fill in this function
-void gpuThread(int N, int *matA, int *matB, int *output)
-{
-    size_t bytes = N * N * sizeof(int);
-    size_t bytes1 = (N/2) * (N/2) * sizeof(int);
-
-    int *d_a, *d_b, *d_c;
-    cudaMalloc((void **)&d_a, bytes);
-    cudaMalloc((void **)&d_b, bytes);
-    cudaMalloc((void **)&d_c, bytes1);
-
-    d_a ={0};
-    d_b ={0};
-    d_c ={0};
-
-    cudaMemcpy(d_a , matA , bytes , cudaMemcpyHostToDevice);
-    cudaMemcpy(d_b , matB , bytes , cudaMemcpyHostToDevice);
-
-    int threads = N;
-
-    int blocks = 1;
-
-    matrixMul<<<blocks , threads>>>(d_a , d_b , d_c, N , threads);
-
-    cudaMemcpy(output , d_c , bytes1 , cudaMemcpyDeviceToHost);
-
-    cudaFree(d_a);
-    cudaFree(d_b);
-    cudaFree(d_c);
-}
-
-
-
-
-
-// Create other necessary functions here
-__global__ void matrixMul(int *a, int *b, int *c, int N , clock_t *time) {
-  // Compute each thread's global row and column index
-
-  if(threadIdx.x == 0){
-    time[blockIdx.x] = clock();
-  }
-
-  int row = blockIdx.x * blockDim.x + threadIdx.x;
-  int col = blockIdx.y * blockDim.y + threadIdx.y;
-
-  // Iterate over row, and down column
-
-  c[row * (N/2) + col] = 0;
-  for (int k = 0; k < N; k++) {
-    // Accumulate results for a single element
-    c[row*(N/2) + col] += a[row *2*N + k] * b[k * N + col*2];
-     c[row * (N/2) + col] += a[(row*2+1)*N + k] * b[k * N + col*2];
-      c[row * (N/2) + col] += a[row *N*2 + k] * b[k * N + col*2+1];
-       c[row * (N/2) + col] += a[(row*2+1) * N + k] * b[k * N + col*2+1];
-  }
-
-    if(threadIdx.x == 0){
-        time[blockIdx.x + gridDim.x] = clock();
+        for(int j=N/2 ; j<N ; j++){
+            temp[(i * N) + j] = matB[(j * N) + i];
+        }
     }
-
-//   for (int rowA = 0; rowA < N; rowA += 2)
-//   {
-//     for (int colB = 0; colB < N; colB += 2)
-//     {
-//       int sum = 0;
-//       for (int iter = 0; iter < N; iter++)
-//       {
-//         sum += matA[rowA * N + iter] * matB[iter * N + colB];
-//         sum += matA[(rowA + 1) * N + iter] * matB[iter * N + colB];
-//         sum += matA[rowA * N + iter] * matB[iter * N + (colB + 1)];
-//         sum += matA[(rowA + 1) * N + iter] * matB[iter * N + (colB + 1)];
-//       }
-
-//       // compute output indices
-//       int rowC = rowA >> 1;
-//       int colC = colB >> 1;
-//       int indexC = rowC * (N >> 1) + colC;
-//       output[indexC] = sum;
-//     }
-//   }
-
-//   for(int rowA=threadIdx.x ; rowA<N ; rowA+=threads){
-// 		for(int colB = 0; colB < N; colB += 2){
-// 			int s = 0;
-
-// 			for(int iter = 0; iter < N; iter++) 
-// 			{
-// 				s += matA[rowA * N + iter] * matB[iter * N + colB];	
-// 			}
-// 			output[(rowA>>1) * (N>>1) +(colB>>1)]+=s;
-//         }
-			
-// 		for(int colB = 1; colB < N; colB += 2){
-// 			int s = 0;
-
-// 			for(int iter = 0; iter < N; iter++) 
-// 			{
-// 				s += matA[rowA * N + iter] * matB[iter * N + colB];
-// 			}
-// 		    output[(rowA>>1) * (N>>1) +(colB>>1)]+=s;
-// 		}
-// 	}
 }
 
-// Fill in this function
+
+//Clock function
+void print_time(clock_t *check_time , int num_of_blocks){
+    // cout<<"Blocks , Time"<<endl;
+    // for(int i=0 ; i<num_of_blocks; i++){
+    //     cout<<i<<","<<(check_time[i+num_of_blocks] - check_time[i])<<endl;
+    // }
+}
+
+
+
+// Main GPU function
+
+
 void gpuThread(int N, int *matA, int *matB, int *output)
 {
-    size_t bytes = N * N * sizeof(int);
-    size_t bytes1 = (N/2) * (N/2) * sizeof(int);
 
-    // //Transpose matrix B
-    // int *temp = (int *)malloc(N*N*sizeof(int));
-    // for(int i=0 ; i<N ; i++){
-    //     for(int j=0 ; j<N ; j++){
-    //         temp[i * N + j] = matB[j * N + i];
-    //     }
-    // }
+    //allocating memory to 3 temp matrices
+    int *temp_matA, *temp_matB, *temp_output;
 
-    // //Adding consecutive rows of matrix A
-    // int *tempA = (int *)malloc(N/2*N*sizeof(int));
-    // //int *tempB = (int *)malloc(N/2*N*sizeof(int));
-    // int c=0;
-    // for(int i=0; i<N ; i=i+2){
-    //     for(int j=0 ; j<N ; j++){
-    //         tempA[c * N + j] = matA[i * N + j] + matA[(i+1) * N + j];
-    //         //tempB[c * N + j] = temp[i * N + j] + temp[(i+1) * N + j];
-    //     }
-    //     c++;
-    // }
+    size_t size_of_matrix = N * N * sizeof(int); 
 
-    int *d_a, *d_b, *d_c;
-    cudaMalloc((void **)&d_a, bytes);
-    cudaMalloc((void **)&d_b, bytes);
-    cudaMalloc((void **)&d_c, bytes1);
+    cudaMalloc((void **)&temp_matA, size_of_matrix);
+    cudaMalloc((void **)&temp_matB, size_of_matrix);
+    cudaMalloc((void **)&temp_output, size_of_matrix/4);
 
-    // d_a ={0};
-    // d_b ={0};
-    // d_c ={0};
 
-    //init_matrices(output,N);
+    int max_num_of_threads = 16;
 
-    cudaMemcpy(d_a , matA , bytes , cudaMemcpyHostToDevice);
-    cudaMemcpy(d_b , matB , bytes , cudaMemcpyHostToDevice);
-    //cudaMemcpy(d_c , output , bytes , cudaMemcpyHostToDevice);
+    //copy value of input matrices to these temp matrices
 
-    int threads = 8;
+    cudaMemcpy(temp_matA , matA , size_of_matrix , cudaMemcpyHostToDevice);
+    cudaMemcpy(temp_matB , matB , size_of_matrix , cudaMemcpyHostToDevice);
 
-    int blocks = (N/2) / threads;
+    int *temp;
+    cudaMalloc((void **)&temp, size_of_matrix);
+    cudaMemset(temp,0,size_of_matrix);
+    //transpose_matB(matB , temp , N);
 
+
+    int thread_count = 8;
+
+    int num_of_blocks = num_threads(N,thread_count); //call function to get no. of blocks
+    
     //Clock
-    clock_t *time = new clock_t[blocks*2];
-    clock_t *d_time;
-    cudaMalloc(&d_time , sizeof(clock_t) * blocks * 2);
+    clock_t *check_time = new clock_t[num_of_blocks * 2];
+    clock_t *temp_time;
+    cudaMalloc(&temp_time , sizeof(clock_t) * num_of_blocks * 2);
 
-    dim3 thread(threads , threads);
-    dim3 block(blocks , blocks);
+    dim3 thread_dim(thread_count , thread_count);
+    dim3 block_dim(num_of_blocks , num_of_blocks);
 
-    matrixMul<<<block , thread>>>(d_a , d_b , d_c, N , d_time)  ;
+    reduced_matrix_multiplication <<<thread_dim , block_dim>>>(temp_matA , temp_matB , temp_output , N ,temp_time) ;  //call matrix multiplication function
 
-    cudaMemcpy(output , d_c , bytes1 , cudaMemcpyDeviceToHost);
-    cudaMemcpy(time , d_time , sizeof(clock_t) * blocks * 2 , cudaMemcpyDeviceToHost);
+    cudaMemcpy(output , temp_output , size_of_matrix/4 , cudaMemcpyDeviceToHost); //copy result to output matrix
 
-    //Print time
-    cout<<"Block , Clock"<<endl;
-    for(int i=0 ; i< blocks ;i++){
-        cout<<i<<" , "<<time[i+blocks] - time[i]<<endl;
-    }
+    cudaMemcpy(check_time , temp_time , sizeof(clock_t) * num_of_blocks * 2 , cudaMemcpyDeviceToHost);
 
-    cudaFree(d_a);
-    cudaFree(d_b);
-    cudaFree(d_c);
+    print_time(check_time , num_of_blocks);
+    // cout<<"Blocks , Time"<<endl;
+    // for(int i=0 ; i<num_of_blocks; i++){
+    //     cout<<i<<","<<(check_time[i+num_of_blocks] - check_time[i])<<endl;
+    // }
+
+    cudaFree(temp_matA);
+    cudaFree(temp_matB);
+    cudaFree(temp_output);
 }
-
